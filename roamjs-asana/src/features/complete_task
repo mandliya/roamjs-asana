@@ -1,0 +1,63 @@
+import { getActiveUids, getConfigFromPage, getPageTitleByBlockUid, getTextByBlockUid, updateBlock } from 'roam-client';
+import { render as renderToast } from "roamjs-components/components/Toast";
+import * as asana from '../asana/tasks';
+import { createLogger } from '../utils/logger';
+import {getAsanaIdFromBlock} from '../utils/getAsanaIdFromBlock';
+
+const logger = createLogger("complete-task");
+
+
+export const completeTask = async (targetUid?: string) => {
+  try {
+    const config = getConfigFromPage("roam/js/asana");
+    const token = config["ASANA_TOKEN"]?.trim();
+    const workspaceGid = config["ASANA_WORKSPACE_GID"]?.trim();
+    const userGid = config["ASANA_USER_GID"]?.trim();
+    if (!token || !workspaceGid || !userGid) {
+        throw 'Error: Could not find the required "ASANA_TOKEN" or "ASANA_WORKSPACE_GID" or "ASANA_USER_GID" attribute configured in the [[roam/js/asana]] page.'
+    }
+    asana.init(token);
+    const { asanaTaskGid, text, blockUid } = getBlockInfo(targetUid);
+    await asana.completeTask(asanaTaskGid);
+
+    const newContent = text.replace("{{[[TODO]]}}", "{{[[DONE]]}}");
+    await updateBlock({ text: newContent, uid: blockUid });
+
+    logger("succeeded.");
+    renderToast({
+      id: "roamasana-toast-complete-task",
+      content: "Success: complete-task",
+      timeout: 1000,
+      intent: "success",
+    });
+  } catch (e) {
+    logger("failed.");
+    logger(e);
+    renderToast({
+      id: "roamasana-toast-complete-task",
+      content: "Failed: complete-task",
+      timeout: 1000,
+      intent: "warning",
+    });
+    throw e;
+  }
+};
+
+
+function getBlockInfo(targetUid?: string): {
+    asanaTaskGid: string;
+    text: string;
+    blockUid: string;
+} {
+    let blockUid = "";
+    if (targetUid) {
+      blockUid = targetUid;
+      logger(`targetUid: ${targetUid}`);
+    } else {
+      const { blockUid } = getActiveUids();
+      logger(`blockUid: ${blockUid}`);
+    }
+    const text = getTextByBlockUid(blockUid);
+    const asanaTaskGid = getAsanaIdFromBlock(text);
+    return {asanaTaskGid, text, blockUid};
+}
